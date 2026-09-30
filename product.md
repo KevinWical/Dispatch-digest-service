@@ -9,7 +9,7 @@ Initial sports supported: NBA, NFL, NHL, MLB.
 V1 will not require accounts, payments, or passwords.
 Target audience: people with low-bandwidth connectivity who cannot access sites like ESPN.com or CNN.com
 
-V1 user journey
+V1 user journey:
 Visitor
 Enter email
 Select league/team

@@ -1,0 +1,11 @@
+Dispatch is a hosted service that emails users summaries of topics they select at an interval of their choosing.
+For example, weekly league standings for the NBA or NFL, or the 10 most recent game scores for their team.
+A user would provide their email address and select their team/topics they are interested in.
+The service sends a verification link to their email to confirm interest and prevent unwanted enrollment.
+After verification, users receive emails daily/weekly/biweekly/monthly with their customized digest.
+Data retrieved from ESPN/other endpoints is stored in our database to prevent rate limiting of provider endpoints.
+Every email should include a link to allow users to update or cancel their subscription, without requiring a password.
+
+Initial sports supported: NBA, NFL, NHL, MLB.
+V1 will not require accounts, payments, or passwords.
+Target audience: people with low-bandwidth connectivity who cannot access sites like ESPN.com or CNN.

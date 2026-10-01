@@ -1,0 +1,27 @@
+{
+  "name": "dispatch-digest-service",
+  "version": "1.0.0",
+  "description": "Dispatch is a hosted service for creating personalized, scheduled email digests from multiple sources, beginning with sports with the goal to add local and international news.",
+  "type": "module",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint",
+    "test": "vitest run",
+    "validate": "npm run typecheck && npm run lint && npm run test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.3",
+    "eslint": "^10.11.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^5.0.2"
+  }
+}

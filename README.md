@@ -54,6 +54,28 @@ never log or persist it. The hash stays internal to the persistence operation.
 Pass the bigint user ID as a string and an explicit future expiration Date.
 This function does not decide verification eligibility or the token lifetime.
 
+## Management credentials
+
+`createManagementRequest(userId)` in `src/management-persistence.ts` generates
+a cryptographically random, URL-safe 256-bit credential and inserts only its
+SHA-256 hash into `management_requests`. A single autocommitted `INSERT ... SELECT`
+requires the referenced user to be verified. The function returns only the raw
+credential string after persistence succeeds; never persist or log it. The
+bigint user ID is supplied as a string.
+
+Creation and expiration use the same MySQL statement timestamp in UTC, with
+the issuance function currently chooses expiration 30 minutes later. The database
+only requires `expires_at > created_at`; it does not enforce a specific lifetime.
+`consumed_at` starts NULL. Requests may
+coexist; issuance does not consume or invalidate prior credentials. Management
+credentials use a separate table and API from email verification. The table
+has a restrictive user foreign key, unique token hash, and an index for a user's
+unconsumed requests by expiry. Consumption, preference changes, and email/link
+handling are not implemented.
+
+The additive `003_management_requests` migration is applied using the existing
+migration mechanism; earlier migration definitions are unchanged.
+
 ## Database migrations
 
 Use Node.js 24 or newer (native TypeScript execution) and MySQL 8.0.16 or newer
@@ -108,7 +130,8 @@ plus DELETE. Export `DISPATCH_TEST_DB_NAME` with that name and provide the usual
 `node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run tests/migrations.integration.test.ts`.
 The tests apply migrations to that dedicated database, check constraints,
 repeatability, replacement rollback, concurrent replacement, and concurrent
-creation of a single lowercase user identity. Synthetic rows
+creation of a single lowercase user identity, and management credential issuance
+with verified-user eligibility and exact expiration. Synthetic rows
 are rolled back or removed by their test user ID; schema and migration history
 remain for subsequent runs. They refuse the normal `DB_NAME` and any database
 without the test prefix. Without this opt-in variable, live tests are skipped.

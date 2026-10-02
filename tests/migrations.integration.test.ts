@@ -6,8 +6,16 @@ import { runMigrations } from "../src/migrations.js";
 import { replaceVerificationRequest } from "../src/verification-persistence.js";
 import * as tokenModule from "../src/verification-token.js";
 import { findOrCreateUser } from "../src/user-persistence.js";
+import { createManagementRequest } from "../src/management-persistence.js";
+import { hashManagementCredential } from "../src/management-credential.js";
 
 const database = process.env.DISPATCH_TEST_DB_NAME;
+
+interface ManagementRequestRow extends RowDataPacket {
+  token_hash: string;
+  consumed_at: Date | null;
+  lifetime?: number;
+}
 
 it.skipIf(!database)("enforces the migrated schema in a dedicated MySQL test database", async () => {
   if (!database?.startsWith("dispatch_test_") || database === process.env.DB_NAME) {
@@ -53,6 +61,70 @@ it.skipIf(!database)("enforces the migrated schema in a dedicated MySQL test dat
   } finally {
     try {
       await connection.rollback();
+    } finally {
+      await connection.end();
+    }
+  }
+});
+
+it.skipIf(!database)("persists independent 30-minute management credentials only for verified users", async () => {
+  if (!database?.startsWith("dispatch_test_") || database === process.env.DB_NAME) {
+    throw new Error("DISPATCH_TEST_DB_NAME must name a separate database beginning with dispatch_test_.");
+  }
+  const env = { ...process.env, DB_NAME: database };
+  const connection = await connectDatabase(env);
+  let userId: string | undefined;
+  try {
+    await runMigrations(connection);
+    const [user] = await connection.execute<ResultSetHeader>(
+      "INSERT INTO users (email) VALUES (?)", [`${randomUUID()}@example.test`],
+    );
+    userId = String(user.insertId);
+    await expect(createManagementRequest(userId, env)).rejects.toThrow("Could not create");
+    const [before] = await connection.execute<RowDataPacket[]>(
+      "SELECT id FROM management_requests WHERE user_id = ?", [userId],
+    );
+    expect(before).toHaveLength(0);
+    await connection.execute("UPDATE users SET verified_at = CURRENT_TIMESTAMP(6) WHERE id = ?", [userId]);
+    const raw = await createManagementRequest(userId, env);
+    const hash = hashManagementCredential(raw);
+    const [requests] = await connection.execute<ManagementRequestRow[]>(
+      "SELECT token_hash, consumed_at, TIMESTAMPDIFF(MICROSECOND, created_at, expires_at) AS lifetime FROM management_requests WHERE user_id = ?",
+      [userId],
+    );
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ token_hash: hash, consumed_at: null, lifetime: 1_800_000_000 });
+    expect(requests[0]?.token_hash).not.toBe(raw);
+    await expect(connection.execute(
+      "INSERT INTO management_requests (user_id, token_hash, expires_at) VALUES (?, ?, DATE_ADD(CURRENT_TIMESTAMP(6), INTERVAL 30 MINUTE))",
+      [userId, hash],
+    )).rejects.toMatchObject({ code: "ER_DUP_ENTRY" });
+    await connection.execute(
+      "INSERT INTO management_requests (user_id, token_hash, expires_at) VALUES (?, ?, DATE_ADD(CURRENT_TIMESTAMP(6), INTERVAL 31 MINUTE))",
+      [userId, "a".repeat(64)],
+    );
+    for (const expiresAt of ["2026-01-01 00:00:00", "2025-12-31 23:59:59"]) {
+      await expect(connection.execute(
+        "INSERT INTO management_requests (user_id, token_hash, created_at, expires_at) VALUES (?, ?, '2026-01-01 00:00:00', ?)",
+        [userId, "b".repeat(64), expiresAt],
+      )).rejects.toMatchObject({ code: "ER_CHECK_CONSTRAINT_VIOLATED" });
+    }
+    const concurrent = await Promise.allSettled(Array.from({ length: 3 }, () => createManagementRequest(userId!, env)));
+    expect(concurrent.every(({ status }) => status === "fulfilled")).toBe(true);
+    const [outstanding] = await connection.execute<ManagementRequestRow[]>(
+      "SELECT token_hash, consumed_at FROM management_requests WHERE user_id = ?", [userId],
+    );
+    expect(outstanding).toHaveLength(5);
+    expect(new Set(outstanding.map((row) => row.token_hash)).size).toBe(5);
+    expect(outstanding.every((row) => row.consumed_at === null)).toBe(true);
+    await connection.execute("UPDATE users SET verified_at = NULL WHERE id = ?", [userId]);
+    await expect(createManagementRequest(userId, env)).rejects.toThrow("Could not create");
+  } finally {
+    try {
+      if (userId) {
+        await connection.execute("DELETE FROM management_requests WHERE user_id = ?", [userId]);
+        await connection.execute("DELETE FROM users WHERE id = ?", [userId]);
+      }
     } finally {
       await connection.end();
     }

@@ -28,7 +28,7 @@ new-subscriber verification process while they remain an active subsriber.
 The public onboarding response must not reveal whether an email address already
 belongs to a Dispatch user. 
 
-"An email has been sent, please check your inbox to continue"
+"An email has been sent, please check your inbox to continue."
 
 ## Subscription Management
 Verification credentials and subscription management credentials are
@@ -39,4 +39,9 @@ The recovery process for a lost management link has not yet been defined.
 One management email authorizes one successful management change: update
 preference(s) or unsubscribe.
 
-Management token is "consumed" only when user successfully submits changes.
+Management token:
+    Lifetime: 30m
+    Clicking/viewing: does NOT consume
+    Successful update/unsub: consume and invalidate other outstanding management tokens
+    Failed update/unsub: does NOT consume
+    Multiple requested tokens: may coexist until expiration

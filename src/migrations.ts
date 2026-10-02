@@ -36,6 +36,23 @@ export const migrations = [
       CONSTRAINT ck_verification_hash CHECK (REGEXP_LIKE(token_hash, '^[0-9a-f]{64}$', 'c'))
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_as_ci`,
   },
+  {
+    id: "003_management_requests",
+    sql: `CREATE TABLE management_requests (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      user_id BIGINT UNSIGNED NOT NULL,
+      token_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+      created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+      expires_at DATETIME(6) NOT NULL,
+      consumed_at DATETIME(6) NULL,
+      CONSTRAINT fk_management_user FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE RESTRICT ON UPDATE RESTRICT,
+      CONSTRAINT uq_management_hash UNIQUE (token_hash),
+      INDEX ix_management_user_expiry (user_id, consumed_at, expires_at),
+      CONSTRAINT ck_management_expiry CHECK (expires_at > created_at),
+      CONSTRAINT ck_management_hash CHECK (REGEXP_LIKE(token_hash, '^[0-9a-f]{64}$', 'c'))
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_as_ci`,
+  },
 ] as const;
 
 interface MigrationRow extends RowDataPacket {

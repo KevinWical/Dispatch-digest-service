@@ -43,11 +43,12 @@ Digest worker requests data from SQL -> sends data + subscriber to Email Deliver
 -What is the intended behavior for the offseason(s)?
 -Is daily too frequent?
 -Would separate emails make sense for separate topics? Could be easier to read and orchestrate.
--If a user unsubscribes, and chooses to later resubscribe, they will need to re-enter their preferences.
-  -Delete user on unsubscribe.
+-How should digest emails provide direct unsubscribe and management entry while creds are short-lived.
 
 ## Closed Questions
 -What is the intended behavior when an active subscriber attempts to subscribe?
   -Send them a manage preferences link
 -What happens if the digest worker has a failure mid subscriber list?
   -We use a SQL transaction to preserve atomicity.
+-If a user unsubscribes, and chooses to later resubscribe, they will need to re-enter their preferences.
+  -Delete user on unsubscribe.

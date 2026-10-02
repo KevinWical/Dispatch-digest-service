@@ -48,7 +48,7 @@ describe("database migrations", () => {
 
   it("applies only the remaining migrations", async () => {
     const { connection, query } = harness(history().slice(0, 1));
-    expect(await runMigrations(connection)).toEqual([migrations[1].id]);
+    expect(await runMigrations(connection)).toEqual(migrations.slice(1).map(({ id }) => id));
     expect(query).not.toHaveBeenCalledWith(migrations[0].sql);
   });
 

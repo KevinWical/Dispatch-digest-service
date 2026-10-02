@@ -25,6 +25,8 @@
 
 ## MySQL
   Persistent storage
+  Replacing an outstanding verification request must be atomic. A failure while creating the replacement
+  must not invalidate the existing request.
 
 ## Data Flow
 ### Ingestion

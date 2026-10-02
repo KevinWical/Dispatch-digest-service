@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { ResultSetHeader } from "mysql2/promise";
-import { expect, it } from "vitest";
+import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import { expect, it, vi } from "vitest";
 import { connectDatabase } from "../src/database.js";
 import { runMigrations } from "../src/migrations.js";
+import { replaceVerificationRequest } from "../src/verification-persistence.js";
+import * as tokenModule from "../src/verification-token.js";
 
 const database = process.env.DISPATCH_TEST_DB_NAME;
 
@@ -50,6 +52,61 @@ it.skipIf(!database)("enforces the migrated schema in a dedicated MySQL test dat
   } finally {
     try {
       await connection.rollback();
+    } finally {
+      await connection.end();
+    }
+  }
+});
+
+it.skipIf(!database)("replaces verification requests atomically and serializes concurrent replacements", async () => {
+  if (!database?.startsWith("dispatch_test_") || database === process.env.DB_NAME) {
+    throw new Error("DISPATCH_TEST_DB_NAME must name a separate database beginning with dispatch_test_.");
+  }
+  const env = { ...process.env, DB_NAME: database };
+  const connection = await connectDatabase(env);
+  let userId: string | undefined;
+  try {
+    await runMigrations(connection);
+    const [user] = await connection.execute<ResultSetHeader>(
+      "INSERT INTO users (email) VALUES (?)", [`${randomUUID()}@example.test`],
+    );
+    userId = String(user.insertId);
+    const expiry = new Date(Date.now() + 60_000);
+    const original = await replaceVerificationRequest(userId, expiry, env);
+    const originalHash = tokenModule.hashVerificationToken(original);
+    // Force a unique-hash violation after invalidation; the original must survive.
+    vi.spyOn(tokenModule, "generateVerificationToken").mockReturnValueOnce({
+      rawToken: "synthetic-failed-token", tokenHash: originalHash,
+    });
+    await expect(replaceVerificationRequest(userId, expiry, env)).rejects.toThrow("Could not replace");
+    vi.restoreAllMocks();
+    const [afterFailure] = await connection.execute<RowDataPacket[]>(
+      "SELECT token_hash, invalidated_at, used_at FROM verification_requests WHERE user_id = ?", [userId],
+    );
+    expect(afterFailure).toHaveLength(1);
+    expect(afterFailure[0]).toMatchObject({ token_hash: originalHash, invalidated_at: null, used_at: null });
+
+    const replacements = await Promise.all([
+      replaceVerificationRequest(userId, expiry, env),
+      replaceVerificationRequest(userId, expiry, env),
+    ]);
+    const [requests] = await connection.execute<RowDataPacket[]>(
+      "SELECT token_hash, invalidated_at FROM verification_requests WHERE user_id = ? ORDER BY id", [userId],
+    );
+    expect(requests).toHaveLength(3);
+    expect(requests.filter((row) => row.invalidated_at === null)).toHaveLength(1);
+    expect(requests[0]?.invalidated_at).not.toBeNull();
+    expect(requests[1]?.invalidated_at).not.toBeNull();
+    expect(requests[2]?.invalidated_at).toBeNull();
+    expect(replacements.map(tokenModule.hashVerificationToken)).toContain(requests[2]?.token_hash);
+  } finally {
+    vi.restoreAllMocks();
+    try {
+      // Remove only this test's synthetic rows from its dedicated test database.
+      if (userId) {
+        await connection.execute("DELETE FROM verification_requests WHERE user_id = ?", [userId]);
+        await connection.execute("DELETE FROM users WHERE id = ?", [userId]);
+      }
     } finally {
       await connection.end();
     }

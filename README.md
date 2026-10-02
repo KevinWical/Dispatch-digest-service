@@ -34,6 +34,16 @@ or log it. Persist only `tokenHash`. `hashVerificationToken(rawToken)` reproduce
 the hash for future verification without trimming or normalizing the input.
 This utility does not implement persistence, expiry, link handling, or delivery.
 
+`replaceVerificationRequest(userId, expiresAt)` in `src/verification-persistence.ts`
+creates a token before touching the database, then uses a dedicated connection
+and transaction to lock the user, invalidate outstanding requests, and insert
+the replacement hash. An insertion failure rolls back the invalidation. The
+user lock serializes simultaneous replacements, including first requests.
+Only the raw token string is returned after commit for constructing the link;
+never log or persist it. The hash stays internal to the persistence operation.
+Pass the bigint user ID as a string and an explicit future expiration Date.
+This function does not decide verification eligibility or the token lifetime.
+
 ## Database migrations
 
 Use Node.js 24 or newer (native TypeScript execution) and MySQL 8.0.16 or newer
@@ -86,7 +96,8 @@ For optional live schema tests, create a separate empty database named
 plus DELETE. Export `DISPATCH_TEST_DB_NAME` with that name and provide the usual
 `DB_HOST`, `DB_USER`, `DB_PASSWORD`, and `DB_PORT` settings. Run
 `node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run tests/migrations.integration.test.ts`.
-The test applies migrations to that dedicated database, checks constraints and
-repeatability, and rolls back its synthetic rows; schema and migration history
-remain for subsequent runs. It refuses the normal `DB_NAME` and any database
+The tests apply migrations to that dedicated database, check constraints,
+repeatability, replacement rollback, and concurrent replacement. Synthetic rows
+are rolled back or removed by their test user ID; schema and migration history
+remain for subsequent runs. They refuse the normal `DB_NAME` and any database
 without the test prefix. Without this opt-in variable, live tests are skipped.

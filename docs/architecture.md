@@ -37,13 +37,17 @@ The schedule/trigger mechanism for the digest worker has not been selected yet.
 Digest worker requests data from SQL -> sends data + subscriber to Email Delivery
 
 ## Open Questions
--What happens if the digest worker has a failure mid subscriber list?
 -How can we prevent duplicate delivery if an email sends successfully but the runner crashes before recording successful delivery?
 -Sportsball used CBS Sports as a backup if the ESPN endpoint failed; would like to expand on this.
 -Do preseason games need to be filtered out of season standings?
 -What is the intended behavior for the offseason(s)?
 -Is daily too frequent?
 -Would separate emails make sense for separate topics? Could be easier to read and orchestrate.
+-If a user unsubscribes, and chooses to later resubscribe, they will need to re-enter their preferences.
+  -Delete user on unsubscribe.
+
+## Closed Questions
 -What is the intended behavior when an active subscriber attempts to subscribe?
-  -Generic response
   -Send them a manage preferences link
+-What happens if the digest worker has a failure mid subscriber list?
+  -We use a SQL transaction to preserve atomicity.

@@ -5,6 +5,7 @@ import { connectDatabase } from "../src/database.js";
 import { runMigrations } from "../src/migrations.js";
 import { replaceVerificationRequest } from "../src/verification-persistence.js";
 import * as tokenModule from "../src/verification-token.js";
+import { findOrCreateUser } from "../src/user-persistence.js";
 
 const database = process.env.DISPATCH_TEST_DB_NAME;
 
@@ -52,6 +53,43 @@ it.skipIf(!database)("enforces the migrated schema in a dedicated MySQL test dat
   } finally {
     try {
       await connection.rollback();
+    } finally {
+      await connection.end();
+    }
+  }
+});
+
+it.skipIf(!database)("finds or creates one lowercase email identity across concurrent MySQL connections", async () => {
+  if (!database?.startsWith("dispatch_test_") || database === process.env.DB_NAME) {
+    throw new Error("DISPATCH_TEST_DB_NAME must name a separate database beginning with dispatch_test_.");
+  }
+  const env = { ...process.env, DB_NAME: database };
+  const connection = await connectDatabase(env);
+  const email = `${randomUUID()}@example.test`;
+  try {
+    await runMigrations(connection);
+    // Each operation opens its own connection; all race on the same unique email.
+    const results = await Promise.allSettled(Array.from({ length: 8 }, (_, index) =>
+      findOrCreateUser(index % 2 ? email.toUpperCase() : email, env),
+    ));
+    expect(results.every(({ status }) => status === "fulfilled")).toBe(true);
+    const identities = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+    expect(new Set(identities.map(({ id }) => id)).size).toBe(1);
+    expect(identities.every((identity) => identity.email === email && !identity.isVerified)).toBe(true);
+    const [rows] = await connection.execute<RowDataPacket[]>(
+      "SELECT CAST(id AS CHAR) AS id, email, verified_at FROM users WHERE email = ?", [email],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: identities[0]?.id, email, verified_at: null });
+    await expect(connection.execute("INSERT INTO users (email) VALUES (?)", [email.toUpperCase()]))
+      .rejects.toMatchObject({ code: "ER_DUP_ENTRY" });
+    await connection.execute("UPDATE users SET verified_at = CURRENT_TIMESTAMP(6) WHERE email = ?", [email]);
+    expect(await findOrCreateUser(email.toUpperCase(), env)).toEqual({
+      id: identities[0]?.id, email, isVerified: true,
+    });
+  } finally {
+    try {
+      await connection.execute("DELETE FROM users WHERE email = ?", [email]);
     } finally {
       await connection.end();
     }

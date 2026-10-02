@@ -22,6 +22,16 @@ must `await connection.end()` when finished (use a `finally` block). Connection
 failures reject the promise with the driver's error. Importing the module does
 not open a connection. No tables or schema are created.
 
+## User email identities
+
+`findOrCreateUser(email)` in `src/user-persistence.ts` lowercases email before
+lookup and persistence. It returns `{ id, email, isVerified }`, with the bigint
+ID represented as a string. New users are unverified; existing users retain
+their verification state. Concurrent inserts are resolved by the existing email
+unique constraint, followed by reading the winning identity. The operation owns
+and closes its connection. Full email-format validation belongs to the future
+service layer, and this result must not expose user existence in public responses.
+
 ## Verification tokens
 
 `generateVerificationToken()` in `src/verification-token.ts` returns `rawToken`
@@ -97,7 +107,8 @@ plus DELETE. Export `DISPATCH_TEST_DB_NAME` with that name and provide the usual
 `DB_HOST`, `DB_USER`, `DB_PASSWORD`, and `DB_PORT` settings. Run
 `node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run tests/migrations.integration.test.ts`.
 The tests apply migrations to that dedicated database, check constraints,
-repeatability, replacement rollback, and concurrent replacement. Synthetic rows
+repeatability, replacement rollback, concurrent replacement, and concurrent
+creation of a single lowercase user identity. Synthetic rows
 are rolled back or removed by their test user ID; schema and migration history
 remain for subsequent runs. They refuse the normal `DB_NAME` and any database
 without the test prefix. Without this opt-in variable, live tests are skipped.

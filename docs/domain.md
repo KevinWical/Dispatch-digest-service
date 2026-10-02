@@ -25,8 +25,18 @@ requests.
 Once a user has been verified, they should not enter the 
 new-subscriber verification process while they remain an active subsriber.
 
+The public onboarding response must not reveal whether an email address already
+belongs to a Dispatch user. 
+
+"An email has been sent, please check your inbox to continue"
+
 ## Subscription Management
 Verification credentials and subscription management credentials are
 separate concepts with separate lifecycles.
 
 The recovery process for a lost management link has not yet been defined.
+
+One management email authorizes one successful management change: update
+preference(s) or unsubscribe.
+
+Management token is "consumed" only when user successfully submits changes.

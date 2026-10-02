@@ -8,6 +8,8 @@
     "doc": "docs"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --env-file-if-exists=.env dist/index.js",
     "db:migrate": "node --env-file-if-exists=.env src/migrate.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint",
@@ -19,6 +21,7 @@
   "license": "ISC",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/express": "^5.0.6",
     "@types/node": "^26.6.3",
     "eslint": "^10.11.0",
     "typescript": "^6.0.3",
@@ -26,6 +29,7 @@
     "vitest": "^5.0.2"
   },
   "dependencies": {
+    "express": "^5.2.1",
     "mysql2": "^3.24.5"
   }
 }

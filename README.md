@@ -22,6 +22,42 @@ must `await connection.end()` when finished (use a `finally` block). Connection
 failures reject the promise with the driver's error. Importing the module does
 not open a connection. No tables or schema are created.
 
+## Onboarding HTTP API
+
+Express implements the HTTP component specified in the architecture. It is the
+only new runtime dependency for this workflow; TypeScript types are development-only.
+`createApp` in `src/app.ts` handles HTTP parsing, validation, and response mapping.
+`createOnboardingService` in `src/onboarding-service.ts` owns identity lookup and
+credential selection. Unverified identities receive a verification request;
+verified identities receive a management request. No email delivery is connected
+yet. The service returns transient delivery material internally; the HTTP layer
+discards it and never logs or returns credentials, hashes, identity IDs, or status.
+
+Set the existing database environment variables and apply migrations. Also set
+`VERIFICATION_TOKEN_TTL_SECONDS` to a positive whole number to choose the
+verification lifetime explicitly. `PORT` is optional and defaults to 3000.
+For example, a local `.env` may set `VERIFICATION_TOKEN_TTL_SECONDS=1800` for a
+30-minute development lifetime; this is configuration, not a schema rule.
+Then run `npm run build` and `npm start`. The API listens on `127.0.0.1` and
+uses compiled JavaScript so NodeNext `.js` import specifiers resolve correctly.
+
+`POST /onboarding` accepts an `application/json` object containing `email`, such
+as `{ "email": "Person.Name+tag@example.com" }`. Conventional dot-atom email
+addresses with a dotted domain are supported, with a 64-character local part
+and 254-character total limit. Empty, malformed, nonstring, or surrounding-
+whitespace input is rejected. No DNS lookup or provider-specific transformation
+is performed: dots and `+tags` survive, and persistence lowercases defensively.
+Malformed JSON/input returns 400, unsupported content type 415, and bodies over
+8 KB return 413 without invoking the service. Successful valid requests always
+return status 202 and `{ "message": "Check your inbox for the next step" }`,
+regardless of identity existence or verification status. Persistence failures
+return a generic 503 without sensitive error details. Responses use `no-store`.
+The inbox message is the initial public contract; emails are not sent yet.
+
+Tests exercise actual HTTP requests locally, plus both credential paths with
+mocked persistence. The existing dedicated MySQL integration suite also checks
+the HTTP-to-database workflow and runs in CI under its existing safety checks.
+
 ## User email identities
 
 `findOrCreateUser(email)` in `src/user-persistence.ts` lowercases email before
@@ -29,8 +65,8 @@ lookup and persistence. It returns `{ id, email, isVerified }`, with the bigint
 ID represented as a string. New users are unverified; existing users retain
 their verification state. Concurrent inserts are resolved by the existing email
 unique constraint, followed by reading the winning identity. The operation owns
-and closes its connection. Full email-format validation belongs to the future
-service layer, and this result must not expose user existence in public responses.
+and closes its connection. The onboarding boundary validates public input before
+persistence; this result must not expose user existence in public responses.
 
 ## Verification tokens
 

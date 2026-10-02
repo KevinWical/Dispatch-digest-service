@@ -8,6 +8,8 @@ import * as tokenModule from "../src/verification-token.js";
 import { findOrCreateUser } from "../src/user-persistence.js";
 import { createManagementRequest } from "../src/management-persistence.js";
 import { hashManagementCredential } from "../src/management-credential.js";
+import { createOnboardingService } from "../src/onboarding-service.js";
+import { withOnboardingServer } from "./http-helper.js";
 
 const database = process.env.DISPATCH_TEST_DB_NAME;
 
@@ -61,6 +63,75 @@ it.skipIf(!database)("enforces the migrated schema in a dedicated MySQL test dat
   } finally {
     try {
       await connection.rollback();
+    } finally {
+      await connection.end();
+    }
+  }
+});
+
+it.skipIf(!database)("onboards through HTTP with real MySQL while keeping every valid identity response identical", async () => {
+  if (!database?.startsWith("dispatch_test_") || database === process.env.DB_NAME) {
+    throw new Error("DISPATCH_TEST_DB_NAME must name a separate database beginning with dispatch_test_.");
+  }
+  const env = { ...process.env, DB_NAME: database };
+  const connection = await connectDatabase(env);
+  const email = `${randomUUID()}.name+tag@example.test`;
+  let userId: string | undefined;
+  try {
+    await runMigrations(connection);
+    await withOnboardingServer(createOnboardingService(60_000, env), async (url) => {
+      const submit = async () => {
+        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.toUpperCase() }) });
+        expect(response.status).toBe(202);
+        expect(await response.json()).toEqual({ message: "Check your inbox for the next step" });
+      };
+      await submit();
+      const [users] = await connection.execute<(RowDataPacket & { id: string; email: string; verified_at: Date | null })[]>(
+        "SELECT CAST(id AS CHAR) AS id, email, verified_at FROM users WHERE email = ?", [email],
+      );
+      expect(users).toHaveLength(1);
+      expect(users[0]).toMatchObject({ email, verified_at: null });
+      userId = users[0]!.id;
+      const [first] = await connection.execute<RowDataPacket[]>(
+        "SELECT token_hash, invalidated_at, used_at FROM verification_requests WHERE user_id = ?", [userId],
+      );
+      expect(first).toHaveLength(1);
+      expect(first[0]).toMatchObject({ invalidated_at: null, used_at: null });
+      expect(first[0]?.token_hash).toMatch(/^[a-f0-9]{64}$/);
+      await submit();
+      const [repeated] = await connection.execute<RowDataPacket[]>(
+        "SELECT COUNT(*) AS total, SUM(invalidated_at IS NULL AND used_at IS NULL) AS outstanding FROM verification_requests WHERE user_id = ?", [userId],
+      );
+      expect(repeated[0]).toMatchObject({ total: 2 });
+      // SUM is returned as a decimal string by MySQL2.
+      expect(Number(repeated[0]?.outstanding)).toBe(1);
+      await connection.execute("UPDATE users SET verified_at = CURRENT_TIMESTAMP(6) WHERE id = ?", [userId]);
+      await submit();
+      const [management] = await connection.execute<ManagementRequestRow[]>(
+        "SELECT token_hash, consumed_at FROM management_requests WHERE user_id = ?", [userId],
+      );
+      expect(management).toHaveLength(1);
+      expect(management[0]?.token_hash).toMatch(/^[a-f0-9]{64}$/);
+      expect(management[0]?.consumed_at).toBeNull();
+      const [verification] = await connection.execute<RowDataPacket[]>(
+        "SELECT COUNT(*) AS total FROM verification_requests WHERE user_id = ?", [userId],
+      );
+      expect(verification[0]).toMatchObject({ total: 2 });
+      const invalid = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "malformed" }) });
+      expect(invalid.status).toBe(400);
+    });
+  } finally {
+    try {
+      // Scope cleanup to the unique synthetic identity created by this test.
+      const [users] = await connection.execute<(RowDataPacket & { id: string })[]>(
+        "SELECT CAST(id AS CHAR) AS id FROM users WHERE email = ?", [email],
+      );
+      userId = users[0]?.id;
+      if (userId) {
+        await connection.execute("DELETE FROM management_requests WHERE user_id = ?", [userId]);
+        await connection.execute("DELETE FROM verification_requests WHERE user_id = ?", [userId]);
+        await connection.execute("DELETE FROM users WHERE id = ?", [userId]);
+      }
     } finally {
       await connection.end();
     }

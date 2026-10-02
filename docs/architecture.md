@@ -42,3 +42,6 @@ Digest worker requests data from SQL -> sends data + subscriber to Email Deliver
 -What is the intended behavior for the offseason(s)?
 -Is daily too frequent?
 -Would separate emails make sense for separate topics? Could be easier to read and orchestrate.
+-What is the intended behavior when an active subscriber attempts to subscribe?
+  -Generic response
+  -Send them a manage preferences link

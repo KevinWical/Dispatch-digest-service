@@ -1,4 +1,4 @@
-Read docs/product.md and docs/architecture.md before making any architectural changes.
+Read docs/product.md, docs/domain.md and docs/architecture.md before making any architectural changes.
 
 Respect the component boundaries defined in docs/architecture.md.
 

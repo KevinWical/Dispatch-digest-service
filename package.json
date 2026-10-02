@@ -8,6 +8,7 @@
     "doc": "docs"
   },
   "scripts": {
+    "db:migrate": "node --env-file-if-exists=.env src/migrate.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint",
     "test": "vitest run",
